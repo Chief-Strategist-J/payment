@@ -7,8 +7,8 @@
 ## 📊 1. Master Feature Implementation Matrix (Prioritized Sequencing)
 
 > **Priority Tier Definitions**:
-> - **P0 (Critical Live Production Blocker)**: Core financial primitives, idempotency, webhook security, and gateway integration required for initial billing.
-> - **P1 (Immediate Milestone v1.1)**: Metered LLM token billing, wallet reservations, automated dunning, and tax compliance.
+> - **P0 (Critical Live Production Blocker)**: Core financial primitives, double-spend prevention, outbox reliability, runaway spend circuit breakers, and webhook security.
+> - **P1 (Immediate Milestone v1.1)**: Metered LLM token billing, 2-phase wallet hold/settle, automated dunning, provider bill reconciliation, and tax compliance.
 > - **P2 (Scaled Enterprise v1.2)**: Multi-gateway failover, enterprise invoice terms (Net-30/60), currency FX, and dispute mitigation.
 > - **P3 (Global & Platform v1.3+)**: FinOps cost allocation graphs, prepaid commit contracts, automated credit line underwriting, and SOC 1 Type II compliance.
 
@@ -20,11 +20,15 @@
 | **Anti-Corruption Layer** | Schema-Driven ACL JSON Transformation (`mapJson`) | Hexagonal Pattern | ✅ **Completed** | Production v1.0 | Core |
 | **Event Streaming** | Kafka Lifecycle Events (`payment.completed`, `refund.initiated`) | CloudEvents / AsyncAPI | ✅ **Completed** | Production v1.0 | Core |
 | **Observability** | OpenTelemetry Trace Spans & Correlation ID Propagation | W3C Trace Context | ✅ **Completed** | Production v1.0 | Core |
-| **Gateway Integration** | Real Stripe / Adyen Payment Gateway Adapter | Gateway REST API | ⏳ **Pending** | v1.0-hotfix | **P0** |
+| **Data Integrity** | Transactional Outbox Pattern & Outbox Poller Relay | Microservices Outbox | ⏳ **Pending** | v1.0-hotfix | **P0** |
+| **Concurrency Defense** | Distributed Locking & Pessimistic Row Lock (`SELECT FOR UPDATE`)| Redis Redlock / ACID | ⏳ **Pending** | v1.0-hotfix | **P0** |
+| **Spend Protection** | Rogue LLM Agent Runaway Spend Hard Circuit Breaker | Safety Guardrail | ⏳ **Pending** | v1.0-hotfix | **P0** |
+| **Gateway Integration** | Real Stripe / Adyen Payment Gateway Adapter (3DS2 SCA) | Gateway REST API | ⏳ **Pending** | v1.0-hotfix | **P0** |
 | **Security & Defense** | Gateway Webhook Cryptographic Verification (HMAC-SHA256) | RFC 2104 | ⏳ **Pending** | v1.0-hotfix | **P0** |
 | **Audit & Ledger** | Double-Entry Immutable Financial Transaction Ledger | GAAP / ASC 606 | ⏳ **Pending** | v1.0-hotfix | **P0** |
-| **Metered Billing** | Real-Time LLM Token Metering Engine (Input/Output/Cached) | Metering Pipeline | ⏳ **Pending** | v1.1 | **P1** |
-| **Wallet Engine** | Balance Hold & Settlement for LLM Streaming Generation | 2-Phase Commit | ⏳ **Pending** | v1.1 | **P1** |
+| **Metered Billing** | Real-Time LLM Token Metering Engine (Input/Output/Cached/Reasoning)| Metering Pipeline | ⏳ **Pending** | v1.1 | **P1** |
+| **Wallet Engine** | 2-Phase Balance Hold & Settlement for LLM Streaming Generation | 2-Phase Commit | ⏳ **Pending** | v1.1 | **P1** |
+| **Reconciliation** | Upstream Provider Invoice Reconciliation (OpenAI/Anthropic vs Ledger)| FinOps Audit | ⏳ **Pending** | v1.1 | **P1** |
 | **Invoicing Engine** | Automated PDF Invoice Generation & Numbering Sequences | Directive 2006/112/EC | ⏳ **Pending** | v1.1 | **P1** |
 | **Tax Compliance** | Automated Sales Tax / EU VAT Engine (TaxJar / Stripe Tax) | Tax Compliance | ⏳ **Pending** | v1.1 | **P1** |
 | **Subscription Engine** | Recurring Billing Plans, Usage Overage & Tier Upgrades | Billing Cycles | ⏳ **Pending** | v1.1 | **P1** |
@@ -40,9 +44,37 @@
 
 ---
 
-## 🚨 2. Live Operational Gaps & Immediate Focus (v1.0-hotfix)
+## 🚨 2. Live Operational Gaps & Immediate Critical Tasks (v1.0-hotfix)
 
-### 2.1 Live Gateway Connector (Stripe / Adyen)
+### 2.1 Transactional Outbox Pattern (Dual-Write Protection)
+- **Current Live Reality**: Currently, database transactions write payment state, and then Kafka events are emitted asynchronously in memory.
+- **Critical Vulnerability**: The Classic Dual-Write Problem. If the application server crashes or restarts after the DB commit but before the Kafka producer emits `payment.completed`, downstream services (like `notification` for receipt delivery or `web-app` for wallet balance updates) will never receive the event, resulting in state divergence.
+- **Remediation (P0)**:
+  - Create `outbox_events` table in the payment database: `(id, aggregate_type, aggregate_id, event_type, payload, status, retry_count, created_at, processed_at)`.
+  - Atomically insert the outbox record inside the exact same PostgreSQL ACID transaction as the payment update.
+  - Run a lightweight background CDC (Change-Data-Capture) or Outbox relay worker with `SKIP LOCKED` to publish events to Kafka with guaranteed at-least-once delivery.
+
+### 2.2 Concurrency & Double-Spend Defense (Distributed Locking)
+- **Current Live Reality**: High-throughput LLM workloads involve concurrent requests hitting the same user wallet simultaneously.
+- **Critical Vulnerability**: Without strict concurrency control, two parallel LLM generation streams could both read a $10 wallet balance, pass the validation check concurrently, and generate $10 of completions each, driving the wallet to -$10 (double-spending).
+- **Remediation (P0)**:
+  - Implement Redis-backed distributed locks (`redlock`) keyed on `wallet:lock:{tenantId}:{userId}` with a 500ms safety TTL for fast pre-flight hold checks.
+  - Implement pessimistic database row locking (`SELECT * FROM wallets WHERE id = $1 FOR UPDATE`) inside the PostgreSQL transaction during final hold placement and settlement.
+
+### 2.3 Rogue LLM Agent Runaway Spend Hard Circuit Breaker
+- **Current Live Reality**: Autonomous LLM agents (LangChain, AutoGen, CrewAI) can easily enter infinite recursive tool-calling loops.
+- **Financial Disaster Risk**: An unmonitored agent script can rack up $10,000+ in Anthropic/OpenAI API costs in under 15 minutes before the customer realizes their account has been emptied.
+- **Remediation (P0)**:
+  - Implement real-time spend velocity tracking in Redis (`spend:velocity:{tenantId}` sliding-window token bucket).
+  - Configurable hard circuit breakers per organization:
+    - Max hourly spend threshold (e.g. $100/hr)
+    - Max per-request token ceiling (e.g. 128k tokens)
+  - When velocity limit is tripped:
+    1. Immediately freeze outgoing LLM generation calls with `HTTP 429 / 402 Spender Circuit Tripped`.
+    2. Dispatch an immediate emergency notification via Kafka (`payment.spend_limit.tripped`).
+    3. Require organization admin manual un-trip via dashboard.
+
+### 2.4 Live Gateway Connector (Stripe / Adyen)
 - **Current Reality**: The current v1.0 implementation contains the pure domain service, state machine, and database adapter with stubbed gateway capture parameters.
 - **Risk**: Cannot charge live credit cards or process actual funds without the gateway adapter.
 - **Remediation (P0)**:
@@ -50,7 +82,7 @@
   - Wire Stripe Payment Intents API (`/v1/payment_intents`) with 3D-Secure (3DS2) Strong Customer Authentication (SCA) support.
   - Implement gateway response code normalization (translating card declines, insufficient funds, and network timeouts into canonical domain error codes).
 
-### 2.2 Cryptographic Webhook Ingestion & Anti-Replay Guard
+### 2.5 Cryptographic Webhook Ingestion & Anti-Replay Guard
 - **Current Reality**: Webhook endpoints are declared in contracts but incoming payload signature verification is not yet active.
 - **Vulnerability**: Without signature verification, an attacker could forge `charge.succeeded` webhooks to illegitimately credit balances.
 - **Remediation (P0)**:
@@ -58,7 +90,7 @@
   - Enforce tolerance timestamp window (reject webhooks older than 300 seconds to prevent replay attacks).
   - Persist processed webhook event IDs in an `idempotency_store` table to ensure at-most-once processing.
 
-### 2.3 Double-Entry Financial Ledger
+### 2.6 Double-Entry Financial Ledger
 - **Current Reality**: The database tracks point-in-time balances and payment records in a single row.
 - **Financial Risk**: Single-entry balance updates are vulnerable to race conditions and lack GAAP-compliant financial audit trails.
 - **Remediation (P0)**:
@@ -91,6 +123,13 @@ As an LLM observability platform, billing is heavily driven by streaming model u
   - When the model stream finishes, the exact token count is reported.
   - The hold is released and the exact amount is debited from the wallet.
   - If the request aborts or errors, the hold is released in full.
+
+### 3.3 Upstream Provider Invoice Reconciliation
+- **The Problem**: Discrepancies between what the LLM provider (OpenAI, Anthropic, AWS Bedrock) bills the platform at the end of the month and what our telemetry reported.
+- **Batch Reconciliation Worker**:
+  - Daily ingestion of provider detailed usage reports (OpenAI Activity API / AWS CUR logs).
+  - Automated diffing against our double-entry ledger at the tenant and model level.
+  - Flags unmetered token leaks, dropped streaming connections, and over-charges.
 
 ---
 
