@@ -1,0 +1,75 @@
+services:
+  payment-service:
+    image: chiefj/llm-obs-payment:latest
+    build:
+      context: ..
+      dockerfile: payment/Dockerfile
+    container_name: observability-payment-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+      - PAYMENT_DB_HOST=payment-service-db
+      - PAYMENT_DB_PORT=5432
+      - PAYMENT_DB_USER=admin
+      - PAYMENT_DB_PASSWORD=llmobs_s3cret_2026
+      - PAYMENT_DB_NAME=llm_payment
+      - DATABASE_URL=postgresql://admin:llmobs_s3cret_2026@payment-service-db:5432/llm_payment
+      - KAFKA_BROKERS=llmobs-kafka-broker:9092
+      - KAFKA_CLIENT_ID=payment-client
+      - KAFKA_SECURITY_PROTOCOL=PLAINTEXT
+      - AUTH_SERVICE_URL=http://observability-auth-service:3001
+      - SERVICE_REGISTRY_URL=http://llmobs-service-registry:31426
+      - OTEL_EXPORTER_OTLP_ENDPOINT=https://llmobs-otel-collector:4318
+      - OTEL_EXPORTER_OTLP_GRPC_ENDPOINT=llmobs-otel-collector:4317
+      - OTEL_SERVICE_NAME=payment-service
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+    depends_on:
+      payment-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - default
+
+  payment-db:
+    image: google/alloydbomni:latest
+    container_name: payment-service-db
+    shm_size: '1gb'
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=llmobs_s3cret_2026
+      - POSTGRES_DB=llm_payment
+      - ALLOYDB_ENABLE_COLUMNAR_ENGINE=false
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c google_columnar_engine.enabled=off
+      -c google_ml_integration.enabled=off
+      -c google_db_advisor.enabled=off
+      -c google_storage.replay_prefetcher_enabled=off
+      -c max_connections=100
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d llm_payment"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - default
+
+volumes:
+  payment_db_data:
+
+networks:
+  default:
+    name: llmobs-payment-network

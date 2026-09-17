@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "action": "create",
+  "topics": [
+    {
+      "name": "prod.payment.payment.completed.v1",
+      "partitions": 3,
+      "replicationFactor": 1,
+      "configs": {
+        "cleanup.policy": "delete",
+        "retention.ms": "604800000"
+      }
+    },
+    {
+      "name": "prod.payment.payment.failed.v1",
+      "partitions": 3,
+      "replicationFactor": 1,
+      "configs": {
+        "cleanup.policy": "delete",
+        "retention.ms": "604800000"
+      }
+    },
+    {
+      "name": "prod.payment.refund.initiated.v1",
+      "partitions": 3,
+      "replicationFactor": 1,
+      "configs": {
+        "cleanup.policy": "delete",
+        "retention.ms": "604800000"
+      }
+    }
+  ]
+}

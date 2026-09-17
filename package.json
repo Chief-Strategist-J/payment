@@ -1,0 +1,33 @@
+{
+  "name": "@observability/payment",
+  "version": "1.0.0",
+  "description": "Multi-tenant payment module: payment intents, wallet management, billing plans, invoice lifecycle, and webhook validation",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./contracts/openapi/v1.yaml"
+  },
+  "scripts": {
+    "start": "npx tsx src/server.ts",
+    "dev": "npx tsx src/server.ts",
+    "db:migrate": "npx tsx database/migrate.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:curl": "./tests/e2e/test-curl-endpoints.sh",
+    "install:deps": "./scripts/install.sh"
+  },
+  "dependencies": {
+    "@chief-strategist-j/shared-infra": "^1.0.5",
+    "pg": "^8.23.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.21.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.0"
+  }
+}

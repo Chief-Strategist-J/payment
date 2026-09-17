@@ -1,0 +1,73 @@
+asyncapi: 3.0.0
+info:
+  title: Payment Service Async Events
+  version: 1.0.0
+  description: Kafka event contracts produced and consumed by the Payment Service.
+
+channels:
+  paymentCompleted:
+    address: prod.payment.payment.completed.v1
+    messages:
+      paymentCompletedEvent:
+        payload:
+          type: object
+          required: [paymentId, tenantId, amountCents, currency]
+          properties:
+            paymentId:
+              type: string
+            tenantId:
+              type: string
+            orgId:
+              type: string
+            userId:
+              type: string
+            amountCents:
+              type: integer
+            currency:
+              type: string
+
+  paymentFailed:
+    address: prod.payment.payment.failed.v1
+    messages:
+      paymentFailedEvent:
+        payload:
+          type: object
+          required: [paymentId, tenantId, reason]
+          properties:
+            paymentId:
+              type: string
+            tenantId:
+              type: string
+            reason:
+              type: string
+
+  refundInitiated:
+    address: prod.payment.refund.initiated.v1
+    messages:
+      refundInitiatedEvent:
+        payload:
+          type: object
+          required: [paymentId, tenantId, amountCents]
+          properties:
+            paymentId:
+              type: string
+            tenantId:
+              type: string
+            amountCents:
+              type: integer
+            currency:
+              type: string
+
+operations:
+  publishPaymentCompleted:
+    action: send
+    channel:
+      $ref: '#/channels/paymentCompleted'
+  publishPaymentFailed:
+    action: send
+    channel:
+      $ref: '#/channels/paymentFailed'
+  publishRefundInitiated:
+    action: send
+    channel:
+      $ref: '#/channels/refundInitiated'

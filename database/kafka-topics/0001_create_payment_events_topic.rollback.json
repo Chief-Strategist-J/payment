@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "action": "delete",
+  "topics": [
+    "prod.payment.payment.completed.v1",
+    "prod.payment.payment.failed.v1",
+    "prod.payment.refund.initiated.v1"
+  ]
+}
