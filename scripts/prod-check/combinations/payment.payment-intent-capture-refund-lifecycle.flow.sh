@@ -16,7 +16,9 @@ echo -e "\nStep 1: Check Payment Service Alive"
 curl -s "${PAYMENT_URL}/" | jq -e '.success == true' >/dev/null && echo "  ✔ Service alive"
 
 # 2. Create payment intent
-echo -e "\nStep 2: Create Payment Intent ($25.00)"
+echo -e '\nStep 2: Create Payment Intent ($25.00)'
+
+
 IDEM_KEY="idem-flow-$(date +%s)-$RANDOM"
 CREATE_RES=$(curl -s -X POST "${PAYMENT_URL}/api/v1/payments" \
   -H "Content-Type: application/json" \
